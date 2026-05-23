@@ -46,6 +46,24 @@ export class CollisionGrid {
     shapes.segments?.forEach((s) => this.rasterizeSegment(s));
   }
 
+  addMaskImage(source: CanvasImageSource) {
+    const canvas = document.createElement("canvas");
+    canvas.width = this.worldWidth;
+    canvas.height = this.worldHeight;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return;
+    ctx.drawImage(source, 0, 0, this.worldWidth, this.worldHeight);
+    const pixels = ctx.getImageData(0, 0, this.worldWidth, this.worldHeight).data;
+    for (let row = 0; row < this.rows; row++) {
+      for (let col = 0; col < this.cols; col++) {
+        const x = Math.min(this.worldWidth - 1, Math.floor(col * this.cellSize + this.cellSize / 2));
+        const y = Math.min(this.worldHeight - 1, Math.floor(row * this.cellSize + this.cellSize / 2));
+        const alpha = pixels[(y * this.worldWidth + x) * 4 + 3];
+        if (alpha > 24) this.setCell(col, row);
+      }
+    }
+  }
+
   isBlocked(x: number, y: number): boolean {
     const col = Math.floor(x / this.cellSize);
     const row = Math.floor(y / this.cellSize);

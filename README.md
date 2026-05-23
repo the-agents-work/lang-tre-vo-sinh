@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-Mặc định Vite chạy ở `http://localhost:5173`; trong phiên Codex hiện tại đang dùng `http://localhost:5187`.
+Mặc định Vite chạy ở `http://localhost:5173`; nếu port đó bận thì Vite sẽ báo port thực tế trong terminal.
 
 ## Điều khiển
 
@@ -32,16 +32,17 @@ Mặc định Vite chạy ở `http://localhost:5173`; trong phiên Codex hiện
 - `src/gameState.ts`: phase quest, inventory/progress, serialize save.
 - `src/save.ts`: auto-save qua `localStorage`.
 
-Muốn thêm map mới: thêm id vào `MapId`, thêm entry trong `MAPS`, rồi thêm background vào `public/assets/maps/`.
+Muốn thêm map mới: thêm id vào `MapId`, thêm entry trong `MAPS`, thêm background vào `public/assets/maps/`, rồi thêm collision mask vào `public/assets/collision/`.
 
 ## Vật lý/terrain
 
 - Deep water đang là collider: chưa học bơi thì không đi thẳng xuống ao/hồ.
 - Shallow water làm nhân vật đi chậm và đổi trạng thái HUD thành `Lội nước`.
 - Exit xuống map mới nằm ở vùng đường đất phía nam, không còn bị blocker che.
-- `src/collision.ts` tạo collision matrix 8px/cell. Ảnh map chỉ là visual; grid này mới quyết định ô nào đi được.
+- `src/collision.ts` tạo collision matrix 8px/cell. Ảnh map chỉ là visual; grid/mask mới quyết định ô nào đi được.
 - Dev mode bấm `M` để bật overlay đỏ debug vùng bị chặn.
-- Ruộng, ao, mương và biên map được rasterize từ rect/ellipse/polygon trong `src/content/maps.ts`.
+- Collision tổng quát dùng mask asset: vẽ vùng cấm bằng pixel/SVG có alpha trong `public/assets/collision/<map>.svg` hoặc PNG, rồi khai báo `collisionMaskKey`/`collisionMaskUrl` trong `src/content/maps.ts`.
+- Rect/ellipse/polygon trong `src/content/maps.ts` chỉ nên dùng cho vùng logic lớn như biên map, ao sâu hoặc ruộng; không dùng để vá từng hàng rào nhỏ.
 - Bù nhìn/cọc tre có HP bar, bị đánh trừ máu; nếu ngắt nhịp quá lâu thì hồi phục.
 
 ## Asset

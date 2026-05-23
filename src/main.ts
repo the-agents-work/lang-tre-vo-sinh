@@ -59,7 +59,12 @@ class VillageScene extends Phaser.Scene {
   }
 
   preload() {
-    Object.values(MAPS).forEach((map) => this.load.image(map.backgroundKey, map.backgroundUrl));
+    Object.values(MAPS).forEach((map) => {
+      this.load.image(map.backgroundKey, map.backgroundUrl);
+      if (map.collisionMaskKey && map.collisionMaskUrl) {
+        this.load.image(map.collisionMaskKey, map.collisionMaskUrl);
+      }
+    });
     this.load.spritesheet("hero", "/assets/hero-spritesheet.png", {
       frameWidth: 144,
       frameHeight: 144,
@@ -323,6 +328,12 @@ class VillageScene extends Phaser.Scene {
     }
     if (this.currentMap.collisionShapes) {
       grid.addShapes(this.currentMap.collisionShapes);
+    }
+    if (this.currentMap.collisionMaskKey) {
+      const mask = this.textures.get(this.currentMap.collisionMaskKey).getSourceImage();
+      if (mask instanceof HTMLImageElement || mask instanceof HTMLCanvasElement || mask instanceof ImageBitmap) {
+        grid.addMaskImage(mask);
+      }
     }
     this.collisionGrid = grid;
 
