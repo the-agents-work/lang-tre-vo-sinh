@@ -1,6 +1,18 @@
 import type { CollisionShapes } from "../collision";
 import type { MapId, QuestPhase } from "../gameState";
-import { BAMBOO_TILEMAP, MARKET_TILEMAP, MOUNTAIN_TILEMAP, RIVER_TILEMAP, VILLAGE_TILEMAP, type TileMapDef } from "./tilemaps";
+import {
+  BAMBOO_TILEMAP,
+  FLOATMARKET_TILEMAP,
+  MARKET_TILEMAP,
+  MOUNTAIN_TILEMAP,
+  OLDTOWN_TILEMAP,
+  PAGODA_TILEMAP,
+  RIVER_TILEMAP,
+  TEAHILL_TILEMAP,
+  TERRACE_TILEMAP,
+  VILLAGE_TILEMAP,
+  type TileMapDef,
+} from "./tilemaps";
 
 export const WORLD = {
   width: 1440,
@@ -19,8 +31,28 @@ export type Point = {
   y: number;
 };
 
-export type CollectibleKind = "lotus" | "bamboo-token" | "market-scroll" | "river-pearl" | "mountain-seal";
-export type TargetKind = "dummy" | "bamboo-post" | "market-post" | "river-post" | "mountain-post";
+export type CollectibleKind =
+  | "lotus"
+  | "bamboo-token"
+  | "market-scroll"
+  | "river-pearl"
+  | "mountain-seal"
+  | "rice-sheaf"
+  | "lantern-orb"
+  | "incense"
+  | "tea-bud"
+  | "fruit";
+export type TargetKind =
+  | "dummy"
+  | "bamboo-post"
+  | "market-post"
+  | "river-post"
+  | "mountain-post"
+  | "terrace-post"
+  | "oldtown-post"
+  | "pagoda-post"
+  | "tea-post"
+  | "chonoi-post";
 export type TerrainKind = "shallow-water" | "deep-water";
 
 export type CollectibleDef = Point & {
@@ -248,15 +280,28 @@ export const MAPS: Record<MapId, MapDef> = {
         allowedPhases: AFTER_MARKET,
         blockedPrompt: "Cổng hội chưa mở. Hoàn thành bài bãi tre rồi về đình gặp thầy Ba.",
       },
+      {
+        id: "west-pagoda-trail",
+        label: "Sang chùa làng",
+        x: 24,
+        y: 420,
+        width: 80,
+        height: 150,
+        to: "chua",
+        spawn: { x: 1360, y: 460 },
+        allowedPhases: [],
+        blockedPrompt: "",
+      },
     ],
     npc: { id: "master", spriteKey: "master-npc", x: 724, y: 238 },
     gate: { id: "festival-gate", x: 704, y: 206, width: 190, height: 70 },
     collectibles: [
-      { id: "lotus-1", kind: "lotus", x: 880, y: 318 },
-      { id: "lotus-2", kind: "lotus", x: 948, y: 558 },
-      { id: "lotus-3", kind: "lotus", x: 1188, y: 428 },
-      { id: "lotus-4", kind: "lotus", x: 1210, y: 260 },
-      { id: "lotus-5", kind: "lotus", x: 1082, y: 560 },
+      // Sen mọc dưới ao — thả trong vành nước nông (chân nhân vật luôn ở ô nước)
+      { id: "lotus-1", kind: "lotus", x: 1140, y: 180 },
+      { id: "lotus-2", kind: "lotus", x: 1340, y: 180 },
+      { id: "lotus-3", kind: "lotus", x: 1140, y: 380 },
+      { id: "lotus-4", kind: "lotus", x: 1340, y: 380 },
+      { id: "lotus-5", kind: "lotus", x: 1220, y: 140 },
     ],
     targets: [
       { id: "dummy-1", kind: "dummy", x: 332, y: 330, maxHp: 3, recoveryPerSecond: 0.55, recoveryDelayMs: 1600 },
@@ -464,6 +509,18 @@ export const MAPS: Record<MapId, MapDef> = {
         allowedPhases: AFTER_RIVER,
         blockedPrompt: "Giúp đủ việc chợ và đạt cấp 3 rồi mới được xuống bến sông.",
       },
+      {
+        id: "north-oldtown-road",
+        label: "Sang phố cổ Hội An",
+        x: 660,
+        y: 30,
+        width: 220,
+        height: 70,
+        to: "oldtown",
+        spawn: { x: 160, y: 400 },
+        allowedPhases: [],
+        blockedPrompt: "",
+      },
     ],
     collectibles: [
       { id: "market-scroll-1", kind: "market-scroll", x: 366, y: 198 },
@@ -593,10 +650,11 @@ export const MAPS: Record<MapId, MapDef> = {
       },
     ],
     collectibles: [
-      { id: "river-pearl-1", kind: "river-pearl", x: 398, y: 308 },
-      { id: "river-pearl-2", kind: "river-pearl", x: 625, y: 602 },
-      { id: "river-pearl-3", kind: "river-pearl", x: 835, y: 462 },
-      { id: "river-pearl-4", kind: "river-pearl", x: 492, y: 742 },
+      // Ngọc sông mò dưới mép nước nông sát bờ sông
+      { id: "river-pearl-1", kind: "river-pearl", x: 780, y: 260 },
+      { id: "river-pearl-2", kind: "river-pearl", x: 820, y: 420 },
+      { id: "river-pearl-3", kind: "river-pearl", x: 820, y: 580 },
+      { id: "river-pearl-4", kind: "river-pearl", x: 900, y: 660 },
     ],
     targets: [
       { id: "river-post-1", kind: "river-post", x: 330, y: 282, maxHp: 6, recoveryPerSecond: 0.9, recoveryDelayMs: 1250 },
@@ -686,6 +744,18 @@ export const MAPS: Record<MapId, MapDef> = {
         allowedPhases: AFTER_MOUNTAIN,
         blockedPrompt: "Đường xuống bến sông ở phía nam.",
       },
+      {
+        id: "north-terrace-trail",
+        label: "Lối lên ruộng bậc thang",
+        x: 500,
+        y: 30,
+        width: 200,
+        height: 70,
+        to: "terrace",
+        spawn: { x: 720, y: 800 },
+        allowedPhases: [],
+        blockedPrompt: "",
+      },
     ],
     collectibles: [
       { id: "mountain-seal-1", kind: "mountain-seal", x: 436, y: 312 },
@@ -725,6 +795,220 @@ export const MAPS: Record<MapId, MapDef> = {
         },
       ],
     },
+  },
+  terrace: {
+    id: "terrace",
+    name: "Ruộng Bậc Thang",
+    backgroundKey: "map-terrace",
+    backgroundUrl: "/assets/maps/mountain.jpg",
+    tilemap: TERRACE_TILEMAP,
+    start: { x: 720, y: 800 },
+    fallbackSpawn: { x: 720, y: 800 },
+    playerDepth: 7,
+    blockers: [],
+    shallowTerrain: [],
+    deepWater: [],
+    exits: [
+      {
+        id: "south-mountain-trail",
+        label: "Xuống Núi Trúc",
+        x: 720,
+        y: 890,
+        width: 200,
+        height: 80,
+        to: "mountain",
+        spawn: { x: 500, y: 90 },
+        allowedPhases: [],
+        blockedPrompt: "",
+      },
+      {
+        id: "west-teahill-trail",
+        label: "Sang đồi chè",
+        x: 24,
+        y: 150,
+        width: 80,
+        height: 110,
+        to: "doiche",
+        spawn: { x: 1360, y: 150 },
+        allowedPhases: [],
+        blockedPrompt: "",
+      },
+    ],
+    collectibles: [
+      { id: "rice-sheaf-1", kind: "rice-sheaf", x: 200, y: 150 },
+      { id: "rice-sheaf-2", kind: "rice-sheaf", x: 1100, y: 310 },
+      { id: "rice-sheaf-3", kind: "rice-sheaf", x: 300, y: 470 },
+      { id: "rice-sheaf-4", kind: "rice-sheaf", x: 1040, y: 630 },
+    ],
+    targets: [
+      { id: "terrace-post-1", kind: "terrace-post", x: 520, y: 150, maxHp: 7, recoveryPerSecond: 0.95, recoveryDelayMs: 1250 },
+      { id: "terrace-post-2", kind: "terrace-post", x: 760, y: 470, maxHp: 7, recoveryPerSecond: 0.95, recoveryDelayMs: 1250 },
+      { id: "terrace-post-3", kind: "terrace-post", x: 900, y: 630, maxHp: 7, recoveryPerSecond: 0.95, recoveryDelayMs: 1250 },
+    ],
+  },
+  oldtown: {
+    id: "oldtown",
+    name: "Phố Cổ Hội An",
+    backgroundKey: "map-oldtown",
+    backgroundUrl: "/assets/maps/market.jpg",
+    tilemap: OLDTOWN_TILEMAP,
+    start: { x: 160, y: 400 },
+    fallbackSpawn: { x: 160, y: 400 },
+    playerDepth: 7,
+    blockers: [],
+    shallowTerrain: [],
+    deepWater: [],
+    exits: [
+      {
+        id: "west-market-road2",
+        label: "Đường về chợ huyện",
+        x: 30,
+        y: 400,
+        width: 90,
+        height: 140,
+        to: "market",
+        spawn: { x: 660, y: 140 },
+        allowedPhases: [],
+        blockedPrompt: "",
+      },
+      {
+        id: "east-floatmarket-road",
+        label: "Ra chợ nổi",
+        x: 1416,
+        y: 420,
+        width: 80,
+        height: 150,
+        to: "chonoi",
+        spawn: { x: 80, y: 460 },
+        allowedPhases: [],
+        blockedPrompt: "",
+      },
+    ],
+    collectibles: [
+      { id: "lantern-orb-1", kind: "lantern-orb", x: 660, y: 200 },
+      { id: "lantern-orb-2", kind: "lantern-orb", x: 300, y: 420 },
+      { id: "lantern-orb-3", kind: "lantern-orb", x: 1000, y: 420 },
+      { id: "lantern-orb-4", kind: "lantern-orb", x: 660, y: 640 },
+    ],
+    targets: [
+      { id: "oldtown-post-1", kind: "oldtown-post", x: 460, y: 420, maxHp: 8, recoveryPerSecond: 1.0, recoveryDelayMs: 1200 },
+      { id: "oldtown-post-2", kind: "oldtown-post", x: 860, y: 420, maxHp: 8, recoveryPerSecond: 1.0, recoveryDelayMs: 1200 },
+      { id: "oldtown-post-3", kind: "oldtown-post", x: 660, y: 320, maxHp: 8, recoveryPerSecond: 1.0, recoveryDelayMs: 1200 },
+    ],
+  },
+  chua: {
+    id: "chua",
+    name: "Chùa Làng",
+    backgroundKey: "map-chua",
+    backgroundUrl: "/assets/maps/village.jpg",
+    tilemap: PAGODA_TILEMAP,
+    start: { x: 1360, y: 460 },
+    fallbackSpawn: { x: 1360, y: 460 },
+    playerDepth: 7,
+    blockers: [],
+    shallowTerrain: [],
+    deepWater: [],
+    exits: [
+      {
+        id: "east-village-trail",
+        label: "Về làng Tre",
+        x: 1416,
+        y: 460,
+        width: 80,
+        height: 150,
+        to: "village",
+        spawn: { x: 70, y: 420 },
+        allowedPhases: [],
+        blockedPrompt: "",
+      },
+    ],
+    collectibles: [
+      { id: "incense-1", kind: "incense", x: 300, y: 460 },
+      { id: "incense-2", kind: "incense", x: 1100, y: 460 },
+      { id: "incense-3", kind: "incense", x: 660, y: 320 },
+      { id: "incense-4", kind: "incense", x: 660, y: 720 },
+    ],
+    targets: [
+      { id: "pagoda-post-1", kind: "pagoda-post", x: 500, y: 460, maxHp: 7, recoveryPerSecond: 0.9, recoveryDelayMs: 1300 },
+      { id: "pagoda-post-2", kind: "pagoda-post", x: 820, y: 460, maxHp: 7, recoveryPerSecond: 0.9, recoveryDelayMs: 1300 },
+      { id: "pagoda-post-3", kind: "pagoda-post", x: 660, y: 600, maxHp: 7, recoveryPerSecond: 0.9, recoveryDelayMs: 1300 },
+    ],
+  },
+  doiche: {
+    id: "doiche",
+    name: "Đồi Chè",
+    backgroundKey: "map-doiche",
+    backgroundUrl: "/assets/maps/mountain.jpg",
+    tilemap: TEAHILL_TILEMAP,
+    start: { x: 1360, y: 150 },
+    fallbackSpawn: { x: 1360, y: 150 },
+    playerDepth: 7,
+    blockers: [],
+    shallowTerrain: [],
+    deepWater: [],
+    exits: [
+      {
+        id: "east-terrace-trail",
+        label: "Về ruộng bậc thang",
+        x: 1416,
+        y: 150,
+        width: 80,
+        height: 110,
+        to: "terrace",
+        spawn: { x: 70, y: 150 },
+        allowedPhases: [],
+        blockedPrompt: "",
+      },
+    ],
+    collectibles: [
+      { id: "tea-bud-1", kind: "tea-bud", x: 200, y: 150 },
+      { id: "tea-bud-2", kind: "tea-bud", x: 1100, y: 310 },
+      { id: "tea-bud-3", kind: "tea-bud", x: 300, y: 470 },
+      { id: "tea-bud-4", kind: "tea-bud", x: 1040, y: 630 },
+    ],
+    targets: [
+      { id: "tea-post-1", kind: "tea-post", x: 520, y: 150, maxHp: 7, recoveryPerSecond: 0.95, recoveryDelayMs: 1250 },
+      { id: "tea-post-2", kind: "tea-post", x: 760, y: 470, maxHp: 7, recoveryPerSecond: 0.95, recoveryDelayMs: 1250 },
+      { id: "tea-post-3", kind: "tea-post", x: 900, y: 630, maxHp: 7, recoveryPerSecond: 0.95, recoveryDelayMs: 1250 },
+    ],
+  },
+  chonoi: {
+    id: "chonoi",
+    name: "Chợ Nổi",
+    backgroundKey: "map-chonoi",
+    backgroundUrl: "/assets/maps/river.jpg",
+    tilemap: FLOATMARKET_TILEMAP,
+    start: { x: 80, y: 460 },
+    fallbackSpawn: { x: 80, y: 460 },
+    playerDepth: 7,
+    blockers: [],
+    shallowTerrain: [],
+    deepWater: [],
+    exits: [
+      {
+        id: "west-oldtown-road",
+        label: "Về phố cổ",
+        x: 24,
+        y: 460,
+        width: 80,
+        height: 130,
+        to: "oldtown",
+        spawn: { x: 1360, y: 420 },
+        allowedPhases: [],
+        blockedPrompt: "",
+      },
+    ],
+    collectibles: [
+      { id: "fruit-1", kind: "fruit", x: 660, y: 200 },
+      { id: "fruit-2", kind: "fruit", x: 300, y: 460 },
+      { id: "fruit-3", kind: "fruit", x: 1000, y: 460 },
+      { id: "fruit-4", kind: "fruit", x: 660, y: 760 },
+    ],
+    targets: [
+      { id: "chonoi-post-1", kind: "chonoi-post", x: 460, y: 460, maxHp: 8, recoveryPerSecond: 1.0, recoveryDelayMs: 1200 },
+      { id: "chonoi-post-2", kind: "chonoi-post", x: 860, y: 460, maxHp: 8, recoveryPerSecond: 1.0, recoveryDelayMs: 1200 },
+      { id: "chonoi-post-3", kind: "chonoi-post", x: 660, y: 360, maxHp: 8, recoveryPerSecond: 1.0, recoveryDelayMs: 1200 },
+    ],
   },
 };
 

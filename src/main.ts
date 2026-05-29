@@ -27,20 +27,43 @@ const HERO_SCALE = 0.48;
 const WALK_SPEED = 190;
 const state = new GameState(loadSave());
 const pressedActions = new Set<Action>();
-const TILE_TEXTURES: Record<TileKind, string> = {
-  grass: "tile-grass",
-  path: "tile-path",
-  courtyard: "tile-courtyard",
-  water: "tile-water",
-  "shallow-water": "tile-shallow-water",
-  rice: "tile-rice",
-  fence: "tile-fence",
-  bamboo: "tile-bamboo",
-  temple: "tile-temple",
-  stall: "tile-stall",
-  rock: "tile-rock",
-  bridge: "tile-bridge",
+// Each tile kind maps to one or more visual variants. The renderer picks a
+// variant deterministically per cell so large patches of the same tile don't
+// read as a repeating grid.
+const TILE_TEXTURES: Record<TileKind, string[]> = {
+  grass: ["tile-grass-0", "tile-grass-1", "tile-grass-2", "tile-grass-3"],
+  path: ["tile-path-0", "tile-path-1", "tile-path-2"],
+  courtyard: ["tile-courtyard-0"],
+  water: ["tile-water-0", "tile-water-1", "tile-water-2"],
+  "shallow-water": ["tile-shallow-water-0", "tile-shallow-water-1", "tile-shallow-water-2"],
+  rice: ["tile-rice-0", "tile-rice-1"],
+  fence: ["tile-fence-0"],
+  bamboo: ["tile-bamboo-0", "tile-bamboo-1"],
+  temple: ["tile-temple-0"],
+  stall: ["tile-stall-0"],
+  rock: ["tile-rock-0", "tile-rock-1"],
+  bridge: ["tile-bridge-0", "tile-bridge-1"],
+  ricegold: ["tile-ricegold-0", "tile-ricegold-1"],
+  shophouse: ["tile-shophouse-0"],
+  tea: ["tile-tea-0", "tile-tea-1"],
 };
+
+// Decorative overlays scattered purely for looks (never affect collision).
+const DECOR_TEXTURES = {
+  flower: "decor-flower",
+  tuft: "decor-tuft",
+  lily: "decor-lily",
+  lantern: "decor-lantern",
+  banana: "decor-banana",
+} as const;
+
+// Stable per-cell hash so a given (col,row) always picks the same variant.
+function cellHash(col: number, row: number) {
+  let h = (Math.imul(col, 73856093) ^ Math.imul(row, 19349663)) >>> 0;
+  h ^= h >>> 13;
+  h = Math.imul(h, 0x5bd1e995) >>> 0;
+  return (h ^ (h >>> 15)) >>> 0;
+}
 
 class VillageScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
@@ -114,6 +137,35 @@ class VillageScene extends Phaser.Scene {
         canWalk: (x: number, y: number) => !this.isFootBlocked(x, y),
         snapshot: () => state.snapshot(),
         save: () => state.toSave(),
+        terrainAt: (x: number, y: number) => {
+          const t = this.currentMap.tilemap;
+          if (!t) return null;
+          const feetY = y + FEET_OFFSET_Y;
+          const tileCol = Math.floor(x / t.tileSize);
+          const tileRow = Math.floor(feetY / t.tileSize);
+          const terr = tileTerrainAt(t, x, feetY);
+          return { tileCol, tileRow, kind: terr?.kind ?? "normal" };
+        },
+        dumpMap: () => {
+          const t = this.currentMap.tilemap;
+          if (!t) return null;
+          const sym: Record<string, string> = {
+            grass: ".", path: " ", courtyard: "c", water: "~", "shallow-water": "s",
+            rice: "R", fence: "#", bamboo: "B", temple: "T", stall: "$", rock: "O", bridge: "=",
+            ricegold: "L", shophouse: "H",
+          };
+          let out = "";
+          for (let r = 0; r < t.rows; r++) {
+            let line = "";
+            for (let c = 0; c < t.cols; c++) {
+              const d = t.detail[r * t.cols + c];
+              const gnd = t.ground[r * t.cols + c];
+              line += d ? sym[d] : sym[gnd];
+            }
+            out += line + "\n";
+          }
+          return out;
+        },
       };
     }
     updateHud(state.snapshot());
@@ -317,13 +369,40 @@ class VillageScene extends Phaser.Scene {
         const x = col * tilemap.tileSize + tilemap.tileSize / 2;
         const y = row * tilemap.tileSize + tilemap.tileSize / 2;
         const ground = tilemap.ground[row * tilemap.cols + col];
-        this.add.image(x, y, TILE_TEXTURES[ground]).setDisplaySize(tilemap.tileSize, tilemap.tileSize).setDepth(0);
+        const groundVariants = TILE_TEXTURES[ground];
+        const groundKey = groundVariants[cellHash(col, row) % groundVariants.length];
+        this.add.image(x, y, groundKey).setDisplaySize(tilemap.tileSize, tilemap.tileSize).setDepth(0);
         const detail = tilemap.detail[row * tilemap.cols + col];
         if (detail) {
-          this.add.image(x, y, TILE_TEXTURES[detail]).setDisplaySize(tilemap.tileSize, tilemap.tileSize).setDepth(1);
+          const detailVariants = TILE_TEXTURES[detail];
+          const detailKey = detailVariants[cellHash(col + 101, row + 53) % detailVariants.length];
+          this.add.image(x, y, detailKey).setDisplaySize(tilemap.tileSize, tilemap.tileSize).setDepth(1);
+        } else {
+          this.scatterDecor(ground, col, row, x, y, tilemap.tileSize);
         }
       }
     }
+  }
+
+  // Purely-visual decoration sprinkled over open (non-blocking, no-detail) tiles.
+  // Driven by cellHash so it's stable; never touches collision.
+  private scatterDecor(ground: TileKind, col: number, row: number, x: number, y: number, size: number) {
+    const h = cellHash(col + 7, row + 31);
+    let key: string | undefined;
+    let scale = 0.62;
+    let depth = 0.6;
+    if (ground === "grass") {
+      if (h % 11 === 0) key = DECOR_TEXTURES.flower;
+      else if (h % 11 === 4) key = DECOR_TEXTURES.tuft;
+      else if (h % 53 === 1) { key = DECOR_TEXTURES.banana; scale = 1; depth = 6; }
+    } else if (ground === "shallow-water") {
+      if (h % 7 === 0) key = DECOR_TEXTURES.lily;
+    } else if (ground === "courtyard") {
+      // lồng đèn treo trên phố / sân — treo cao để nhân vật đi phía dưới
+      if (h % 17 === 0) { key = DECOR_TEXTURES.lantern; scale = 0.8; depth = 9; }
+    }
+    if (!key) return;
+    this.add.image(x, y, key).setDisplaySize(size * scale, size * scale).setDepth(depth);
   }
 
   private cameraZoom(width: number, height: number) {
@@ -435,9 +514,12 @@ class VillageScene extends Phaser.Scene {
   private currentTerrain() {
     const feetX = this.player.x;
     const feetY = this.player.y + 22;
+    // Tilemap maps are the single source of truth for terrain. Do NOT fall back
+    // to the legacy shallowTerrain rects — those cover huge areas and were making
+    // dry dirt/path read as "lội nước".
     if (this.currentMap.tilemap) {
       const tileTerrain = tileTerrainAt(this.currentMap.tilemap, feetX, feetY);
-      if (tileTerrain) return tileTerrain;
+      return tileTerrain ?? { kind: "normal" as const, speedMultiplier: 1, prompt: "" };
     }
     const shallow = this.currentMap.shallowTerrain.find((zone) => rectContains(zone, feetX, feetY));
     return shallow ?? { kind: "normal" as const, speedMultiplier: 1, prompt: "" };
@@ -501,13 +583,7 @@ class VillageScene extends Phaser.Scene {
     const exit = this.exitUnderPlayer();
     if (!exit) return;
 
-    const snapshot = state.snapshot();
-    if (!exit.allowedPhases.includes(snapshot.phase)) {
-      state.setPrompt(exit.blockedPrompt);
-      updateHud(state.snapshot());
-      return;
-    }
-
+    // Cổng luôn mở — đi lại giữa các map tự do, không khoá theo nhiệm vụ.
     state.enterMap(exit.to);
     persistProgress();
     this.transitionLockedUntil = time + 900;
@@ -542,7 +618,7 @@ class VillageScene extends Phaser.Scene {
     }
 
     if (exit) {
-      state.setPrompt(exit.allowedPhases.includes(snapshot.phase) ? "Đi tiếp theo đường đất..." : exit.blockedPrompt);
+      state.setPrompt("Đi tiếp theo đường đất...");
       updateHud(state.snapshot());
       return;
     }
@@ -802,74 +878,431 @@ class VillageScene extends Phaser.Scene {
     g.fillStyle(0x8aa064, 1).fillRoundedRect(9, 17, 22, 28, 4);
     g.generateTexture("mountain-post", 42, 66);
 
+    // Bó lúa (rice sheaf collectible)
     g.clear();
-    g.fillStyle(0x6ca64d, 1).fillRect(0, 0, TILE_SIZE, TILE_SIZE);
-    g.fillStyle(0x7eb95a, 0.65).fillCircle(8, 10, 5).fillCircle(28, 26, 4).fillCircle(20, 34, 3);
-    g.generateTexture("tile-grass", TILE_SIZE, TILE_SIZE);
+    g.lineStyle(3, 0x9a7b2e, 1);
+    for (let i = -2; i <= 2; i++) g.lineBetween(20 + i * 4, 6, 20 + i * 2, 40);
+    g.fillStyle(0xe6cf63, 1).fillEllipse(20, 12, 26, 16);
+    g.fillStyle(0xf4e58a, 1).fillEllipse(20, 10, 18, 10);
+    g.fillStyle(0xb8482c, 1).fillRect(8, 30, 24, 4); // dây buộc
+    g.generateTexture("rice-sheaf", 40, 46);
 
+    // Đèn lồng (lantern-orb collectible)
     g.clear();
-    g.fillStyle(0xcda15c, 1).fillRect(0, 0, TILE_SIZE, TILE_SIZE);
-    g.fillStyle(0xb88947, 0.48).fillCircle(7, 12, 4).fillCircle(30, 29, 3);
-    g.generateTexture("tile-path", TILE_SIZE, TILE_SIZE);
+    g.lineStyle(2, 0x6f4a28, 1).lineBetween(20, 2, 20, 8);
+    g.fillStyle(0xf0c45a, 1).fillRect(12, 6, 16, 3);
+    g.fillStyle(0xd14b3c, 1).fillEllipse(20, 24, 26, 30);
+    g.fillStyle(0xe87060, 1).fillEllipse(20, 22, 16, 22);
+    g.fillStyle(0xffe08a, 0.9).fillEllipse(20, 22, 8, 14);
+    g.fillStyle(0xf0c45a, 1).fillRect(12, 8, 16, 2).fillRect(12, 38, 16, 2);
+    g.fillStyle(0xd9a23a, 1).fillRect(18, 40, 4, 6); // tua
+    g.generateTexture("lantern-orb", 40, 50);
 
+    // Cọc luyện ruộng (terrace-post)
     g.clear();
-    g.fillStyle(0xb76d46, 1).fillRect(0, 0, TILE_SIZE, TILE_SIZE);
-    g.lineStyle(1, 0x8d4f34, 0.35);
-    g.strokeRect(0, 0, TILE_SIZE, TILE_SIZE);
-    g.generateTexture("tile-courtyard", TILE_SIZE, TILE_SIZE);
+    g.lineStyle(6, 0x8a6a30, 1).lineBetween(20, 7, 20, 60);
+    g.lineStyle(5, 0xcdb24a, 1).lineBetween(8, 26, 32, 26);
+    g.fillStyle(0xe6cf63, 1).fillRoundedRect(9, 17, 22, 28, 4);
+    g.generateTexture("terrace-post", 42, 66);
 
+    // Cọc luyện phố (oldtown-post)
     g.clear();
-    g.fillStyle(0x16847a, 1).fillRect(0, 0, TILE_SIZE, TILE_SIZE);
-    g.fillStyle(0x55c1ad, 0.32).fillEllipse(20, 20, 34, 12);
-    g.generateTexture("tile-water", TILE_SIZE, TILE_SIZE);
+    g.lineStyle(6, 0x7a3a24, 1).lineBetween(20, 7, 20, 60);
+    g.lineStyle(5, 0xd14b3c, 1).lineBetween(8, 26, 32, 26);
+    g.fillStyle(0xe0a86a, 1).fillRoundedRect(9, 17, 22, 28, 4);
+    g.generateTexture("oldtown-post", 42, 66);
 
+    // Nén hương (incense collectible)
     g.clear();
-    g.fillStyle(0x4db39b, 1).fillRect(0, 0, TILE_SIZE, TILE_SIZE);
-    g.fillStyle(0xa6dfc1, 0.4).fillEllipse(20, 25, 32, 10);
-    g.generateTexture("tile-shallow-water", TILE_SIZE, TILE_SIZE);
+    g.lineStyle(2, 0x9a3a2a, 1);
+    for (const ix of [14, 20, 26]) g.lineBetween(ix, 10, ix, 44);
+    g.fillStyle(0xffb347, 1).fillCircle(14, 9, 3).fillCircle(20, 8, 3).fillCircle(26, 9, 3);
+    g.fillStyle(0xfff0c2, 0.9).fillCircle(20, 8, 1.4);
+    g.fillStyle(0xb8482c, 1).fillRect(10, 42, 20, 5); // bát hương
+    g.generateTexture("incense", 40, 50);
 
+    // Búp chè (tea-bud collectible)
     g.clear();
-    g.fillStyle(0x8cbf35, 1).fillRect(0, 0, TILE_SIZE, TILE_SIZE);
-    g.lineStyle(3, 0xd9d86a, 0.8);
-    for (let x = 6; x < TILE_SIZE; x += 8) g.lineBetween(x, 4, x - 3, 36);
-    g.generateTexture("tile-rice", TILE_SIZE, TILE_SIZE);
+    g.fillStyle(0x4f8a40, 1).fillEllipse(20, 24, 22, 28);
+    g.fillStyle(0x69a84f, 1).fillEllipse(20, 22, 14, 20);
+    g.fillStyle(0x8cc169, 1).fillEllipse(20, 16, 8, 12);
+    g.fillStyle(0xcfe6a3, 1).fillEllipse(20, 13, 4, 7);
+    g.lineStyle(2, 0x356029, 1).lineBetween(20, 30, 20, 44);
+    g.generateTexture("tea-bud", 40, 48);
 
+    // Trái cây (fruit collectible — giỏ trái cây chợ nổi)
     g.clear();
-    g.fillStyle(0x7fb35a, 1).fillRect(0, 0, TILE_SIZE, TILE_SIZE);
-    g.lineStyle(5, 0x6b4529, 1).lineBetween(4, 22, 36, 18);
-    g.lineStyle(3, 0x9a6a3c, 1).lineBetween(9, 9, 9, 31).lineBetween(25, 8, 25, 30);
-    g.generateTexture("tile-fence", TILE_SIZE, TILE_SIZE);
+    g.fillStyle(0xe6b85a, 1).fillRoundedRect(8, 22, 24, 18, 4); // giỏ
+    g.lineStyle(2, 0x9a6a2e, 1).strokeRoundedRect(8, 22, 24, 18, 4);
+    g.fillStyle(0xe85c5c, 1).fillCircle(15, 20, 6);
+    g.fillStyle(0xf0c45a, 1).fillCircle(24, 19, 6);
+    g.fillStyle(0x7bbf4f, 1).fillCircle(20, 24, 5);
+    g.generateTexture("fruit", 40, 46);
 
+    // Cọc luyện chùa (pagoda-post)
     g.clear();
-    g.fillStyle(0x2f7540, 1).fillRect(0, 0, TILE_SIZE, TILE_SIZE);
-    g.lineStyle(3, 0x9ac66d, 1);
-    for (let x = 8; x < TILE_SIZE; x += 8) g.lineBetween(x, 3, x + 2, 37);
-    g.generateTexture("tile-bamboo", TILE_SIZE, TILE_SIZE);
+    g.lineStyle(6, 0x7a5a3a, 1).lineBetween(20, 7, 20, 60);
+    g.lineStyle(5, 0xc97f3a, 1).lineBetween(8, 26, 32, 26);
+    g.fillStyle(0xe6c87a, 1).fillRoundedRect(9, 17, 22, 28, 4);
+    g.generateTexture("pagoda-post", 42, 66);
 
+    // Cọc luyện đồi chè (tea-post)
     g.clear();
-    g.fillStyle(0x7b4b37, 1).fillRect(0, 0, TILE_SIZE, TILE_SIZE);
-    g.fillStyle(0xb95f39, 1).fillRect(0, 0, TILE_SIZE, 12);
-    g.lineStyle(2, 0xd2b16d, 0.5).strokeRect(4, 14, 32, 22);
-    g.generateTexture("tile-temple", TILE_SIZE, TILE_SIZE);
+    g.lineStyle(6, 0x356029, 1).lineBetween(20, 7, 20, 60);
+    g.lineStyle(5, 0x69a84f, 1).lineBetween(8, 26, 32, 26);
+    g.fillStyle(0x8cc169, 1).fillRoundedRect(9, 17, 22, 28, 4);
+    g.generateTexture("tea-post", 42, 66);
 
+    // Cọc luyện chợ nổi (chonoi-post)
     g.clear();
-    g.fillStyle(0x8f5a32, 1).fillRect(0, 12, TILE_SIZE, 28);
-    g.fillStyle(0xd95a38, 1).fillRect(0, 0, TILE_SIZE, 13);
-    g.fillStyle(0xf0c56a, 1).fillRect(0, 13, TILE_SIZE, 6);
-    g.lineStyle(2, 0x5f3b24, 0.65).strokeRect(5, 20, 30, 14);
-    g.generateTexture("tile-stall", TILE_SIZE, TILE_SIZE);
+    g.lineStyle(6, 0x2f7e8f, 1).lineBetween(20, 7, 20, 60);
+    g.lineStyle(5, 0xe6b85a, 1).lineBetween(8, 26, 32, 26);
+    g.fillStyle(0x9bd4ee, 1).fillRoundedRect(9, 17, 22, 28, 4);
+    g.generateTexture("chonoi-post", 42, 66);
 
-    g.clear();
-    g.fillStyle(0x59624c, 1).fillRect(0, 0, TILE_SIZE, TILE_SIZE);
-    g.fillStyle(0x7d876f, 0.75).fillCircle(10, 12, 9).fillCircle(27, 24, 12);
-    g.lineStyle(2, 0x384030, 0.55).strokeRect(1, 1, TILE_SIZE - 2, TILE_SIZE - 2);
-    g.generateTexture("tile-rock", TILE_SIZE, TILE_SIZE);
+    g.destroy();
+    this.buildTileTextures();
+  }
 
-    g.clear();
-    g.fillStyle(0x8a6035, 1).fillRect(0, 0, TILE_SIZE, TILE_SIZE);
-    g.lineStyle(2, 0xc79a5e, 0.85);
-    for (let y = 8; y < TILE_SIZE; y += 8) g.lineBetween(2, y, 38, y);
-    g.generateTexture("tile-bridge", TILE_SIZE, TILE_SIZE);
+  // Procedural pixel-art tiles. Everything is drawn on a 20x20 logical grid
+  // (PX=2 device pixels per art-pixel) so the textures read as deliberate
+  // pixel art instead of flat blocks. Ground tiles get several seeded variants
+  // so big patches don't repeat; props (fence/bamboo/temple/stall/rock) keep
+  // their structural lines aligned so neighbouring cells form one object.
+  private buildTileTextures() {
+    const g = this.add.graphics();
+    const PX = 2;
+    const N = TILE_SIZE / PX; // 20
+
+    const px = (x: number, y: number, w: number, h: number, color: number, alpha = 1) =>
+      g.fillStyle(color, alpha).fillRect(x * PX, y * PX, w * PX, h * PX);
+
+    const base = (color: number) => px(0, 0, N, N, color);
+
+    const rng = (seed: number) => {
+      let s = seed >>> 0;
+      return () => {
+        s = (s + 0x6d2b79f5) | 0;
+        let t = Math.imul(s ^ (s >>> 15), 1 | s);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    };
+
+    const speckle = (
+      rand: () => number,
+      count: number,
+      palette: number[],
+      alpha = 1,
+      size = 1,
+    ) => {
+      for (let i = 0; i < count; i++) {
+        const x = Math.floor(rand() * (N - size + 1));
+        const y = Math.floor(rand() * (N - size + 1));
+        px(x, y, size, size, palette[Math.floor(rand() * palette.length)], alpha);
+      }
+    };
+
+    const make = (key: string, draw: () => void) => {
+      g.clear();
+      draw();
+      if (this.textures.exists(key)) this.textures.remove(key);
+      g.generateTexture(key, TILE_SIZE, TILE_SIZE);
+    };
+
+    // --- Grass: lush but muted, scattered blades + clover specks ---
+    for (let v = 0; v < 4; v++) {
+      make(`tile-grass-${v}`, () => {
+        const rand = rng(11 + v * 7);
+        base(0x6f9a4e);
+        speckle(rand, 30, [0x7faa57, 0x82ad5d], 1);
+        speckle(rand, 22, [0x5d8642, 0x567c3c], 1);
+        // a handful of short blades (2px tall)
+        for (let i = 0; i < 6; i++) {
+          const x = Math.floor(rand() * N);
+          const y = Math.floor(rand() * (N - 2));
+          px(x, y, 1, 2, 0x4f7a37);
+          px(x, y - 1, 1, 1, 0x8cb863);
+        }
+        // occasional tiny flower
+        if (v % 2 === 0) {
+          const fx = 3 + Math.floor(rand() * (N - 6));
+          const fy = 3 + Math.floor(rand() * (N - 6));
+          px(fx, fy, 1, 1, 0xf0d765);
+        }
+      });
+    }
+
+    // --- Dirt path: warm packed earth with pebbles + footworn tones ---
+    for (let v = 0; v < 3; v++) {
+      make(`tile-path-${v}`, () => {
+        const rand = rng(101 + v * 13);
+        base(0xc1a268);
+        speckle(rand, 26, [0xcbb079, 0xd3bb88], 1);
+        speckle(rand, 24, [0xae8c50, 0xa07e45], 1);
+        // pebbles (2px)
+        for (let i = 0; i < 4; i++) {
+          const x = Math.floor(rand() * (N - 2));
+          const y = Math.floor(rand() * (N - 2));
+          px(x, y, 2, 1, 0x8f6f3c);
+          px(x, y, 1, 1, 0xd8c596);
+        }
+      });
+    }
+
+    // --- Courtyard: laid brick / packed clay ---
+    make("tile-courtyard-0", () => {
+      const rand = rng(303);
+      base(0xb27a4d);
+      speckle(rand, 18, [0xbe885a, 0xc6925f], 1);
+      speckle(rand, 14, [0x9c6840], 1);
+      // brick seams (offset rows)
+      for (let row = 0; row < N; row += 5) {
+        px(0, row, N, 1, 0x8a5c38, 0.6);
+        const offset = (row / 5) % 2 === 0 ? 0 : 10;
+        for (let x = offset; x < N; x += 10) px(x, row, 1, 5, 0x8a5c38, 0.55);
+      }
+    });
+
+    // --- Deep water: clear blue, layered ripples ---
+    for (let v = 0; v < 3; v++) {
+      make(`tile-water-${v}`, () => {
+        const rand = rng(404 + v * 9);
+        base(0x1d6fa6);
+        speckle(rand, 16, [0x1a5f90, 0x2277ad], 1);
+        // ripple highlights — short horizontal dashes
+        for (let i = 0; i < 7; i++) {
+          const x = Math.floor(rand() * (N - 4));
+          const y = Math.floor(rand() * N);
+          px(x, y, 3, 1, 0x4fa8d8, 0.75);
+          px(x + 1, y - 1, 2, 1, 0x9bd4ee, 0.55);
+        }
+      });
+    }
+
+    // --- Shallow water: unmistakably blue water (NO sand specks — those read as
+    //     wet dirt and made the pond edge look like land). Foam-flecked ripples. ---
+    for (let v = 0; v < 3; v++) {
+      make(`tile-shallow-water-${v}`, () => {
+        const rand = rng(505 + v * 9);
+        base(0x3fa6e0);
+        speckle(rand, 16, [0x359bd4, 0x4fb2e8], 1);
+        for (let i = 0; i < 7; i++) {
+          const x = Math.floor(rand() * (N - 4));
+          const y = Math.floor(rand() * N);
+          px(x, y, 3, 1, 0xbdeaf8, 0.85);
+          px(x + 1, y + 1, 2, 1, 0x8fd6f0, 0.6);
+        }
+      });
+    }
+
+    // --- Rice paddy: flooded field — bluish water base + bright young-rice rows.
+    //     Deliberately NOT plain green so it never gets mistaken for lawn grass. ---
+    for (let v = 0; v < 2; v++) {
+      make(`tile-rice-${v}`, () => {
+        const rand = rng(606 + v * 17);
+        base(0x5f9a78);
+        // strong wet sheen so the flooded water reads clearly
+        px(0, 0, N, N, 0x3f86a6, 0.34);
+        // thin water channels between the planted rows
+        for (let cy = 4; cy < N; cy += 5) px(0, cy, N, 1, 0x6fb6d0, 0.5);
+        // seedling clumps on a fixed lattice so paddies look continuous
+        for (let cy = 2; cy < N; cy += 5) {
+          for (let cx = 2; cx < N; cx += 5) {
+            const jx = cx + (rand() < 0.5 ? 0 : 1);
+            px(jx, cy, 1, 2, 0xb6d957);
+            px(jx - 1, cy + 1, 1, 1, 0x9ac23f);
+            px(jx + 1, cy + 1, 1, 1, 0xcde87a);
+          }
+        }
+      });
+    }
+
+    // --- Fence: TRANSPARENT base so it sits on grass or path; aligned rails ---
+    make("tile-fence-0", () => {
+      // two vertical posts at fixed columns -> continuous across cells
+      const post = (x: number) => {
+        px(x, 3, 2, 14, 0x6b4426);
+        px(x, 3, 1, 14, 0x855736);
+        px(x, 3, 2, 1, 0x9c6a40);
+      };
+      post(4);
+      post(14);
+      // top + mid rail
+      px(0, 6, N, 2, 0x8a5a30);
+      px(0, 6, N, 1, 0xa9763f);
+      px(0, 12, N, 2, 0x7a4f2b);
+    });
+
+    // --- Bamboo grove (wall): dark canopy, aligned canes + nodes ---
+    for (let v = 0; v < 2; v++) {
+      make(`tile-bamboo-${v}`, () => {
+        const rand = rng(808 + v * 23);
+        base(0x33602f);
+        speckle(rand, 26, [0x2c5429, 0x3a6b34], 1);
+        // canes at fixed x so they line up vertically across cells
+        for (const cx of [4, 10, 16]) {
+          px(cx, 0, 2, N, 0x6f9a45);
+          px(cx, 0, 1, N, 0x86b257);
+          // nodes
+          for (let ny = (v ? 2 : 5); ny < N; ny += 6) px(cx, ny, 2, 1, 0x4f7a37);
+        }
+        // a few leaf flecks
+        speckle(rand, 10, [0x9ac06a], 0.85);
+      });
+    }
+
+    // --- Temple: terracotta tiled roof texture (block repeats as a roof) ---
+    make("tile-temple-0", () => {
+      base(0xb5503a);
+      // roof tile courses
+      for (let row = 0; row < N; row += 4) {
+        px(0, row, N, 1, 0x8f3c2b, 0.85);
+        const offset = (row / 4) % 2 === 0 ? 0 : 3;
+        for (let x = offset; x < N; x += 6) {
+          px(x, row + 1, 1, 3, 0x9a4230, 0.8);
+          px(x + 1, row + 1, 2, 1, 0xcf6a47, 0.7);
+        }
+      }
+    });
+
+    // --- Market stall: striped awning over a wooden counter + shade ---
+    make("tile-stall-0", () => {
+      // awning (top ~half) red/cream stripes
+      for (let x = 0; x < N; x += 4) {
+        px(x, 0, 2, 9, 0xcf4636);
+        px(x + 2, 0, 2, 9, 0xf0d9a3);
+      }
+      px(0, 8, N, 1, 0x8a3326); // awning lip shadow
+      // counter / goods
+      px(0, 9, N, 11, 0x9a6a3c);
+      px(0, 9, N, 2, 0xb88a52);
+      px(0, 17, N, 3, 0x6f4a28, 0.9); // shaded ground under stall
+    });
+
+    // --- Rock / cliff: layered grey-green stone with cracks ---
+    for (let v = 0; v < 2; v++) {
+      make(`tile-rock-${v}`, () => {
+        const rand = rng(909 + v * 31);
+        base(0x6a7163);
+        speckle(rand, 22, [0x767e6e, 0x828a78], 1);
+        speckle(rand, 18, [0x565d50, 0x4c5247], 1);
+        // top-light edge
+        px(0, 0, N, 1, 0x939a87, 0.7);
+        // a crack
+        let cx = 4 + Math.floor(rand() * 10);
+        for (let y = 2; y < N - 1; y += 1) {
+          px(cx, y, 1, 1, 0x3c4138, 0.8);
+          if (rand() < 0.4) cx += rand() < 0.5 ? -1 : 1;
+          cx = Math.max(1, Math.min(N - 2, cx));
+        }
+      });
+    }
+
+    // --- Wooden bridge: planks across, with seams and grain ---
+    for (let v = 0; v < 2; v++) {
+      make(`tile-bridge-${v}`, () => {
+        const rand = rng(1010 + v * 5);
+        base(0x9c6f3f);
+        for (let y = 0; y < N; y += 4) {
+          px(0, y, N, 3, 0xa9794a);
+          px(0, y, N, 1, 0xc2945e, 0.8);
+          px(0, y + 3, N, 1, 0x6f4a28); // plank seam
+          // grain ticks
+          for (let i = 0; i < 3; i++) px(2 + Math.floor(rand() * (N - 4)), y + 1, 2, 1, 0x82592f, 0.6);
+        }
+        // side rails (left/right edges read as bridge sides)
+        px(0, 0, 1, N, 0x6f4a28);
+        px(N - 1, 0, 1, N, 0x6f4a28);
+      });
+    }
+
+    // --- Golden ripe rice (lúa chín) — terraced fields, blocked like rice ---
+    for (let v = 0; v < 2; v++) {
+      make(`tile-ricegold-${v}`, () => {
+        const rand = rng(1212 + v * 19);
+        base(0xcdb24a);
+        px(0, 0, N, N, 0xb9933a, 0.25);
+        for (let cy = 2; cy < N; cy += 4) px(0, cy, N, 1, 0xa9842f, 0.5);
+        // drooping heavy grain heads
+        for (let cy = 1; cy < N; cy += 4) {
+          for (let cx = 1; cx < N; cx += 4) {
+            const jx = cx + (rand() < 0.5 ? 0 : 1);
+            px(jx, cy, 1, 3, 0xe6cf63);
+            px(jx, cy, 1, 1, 0xf4e58a);
+            px(jx + 1, cy + 2, 1, 1, 0xbf9a3a);
+          }
+        }
+      });
+    }
+
+    // --- Tea bushes (luống chè) — rounded green hedges, blocked ---
+    for (let v = 0; v < 2; v++) {
+      make(`tile-tea-${v}`, () => {
+        const rand = rng(1414 + v * 23);
+        base(0x3f6e34);
+        speckle(rand, 24, [0x4a7d3c, 0x356029], 1);
+        // rounded bush tops in a staggered grid
+        for (let cy = 2 + (v ? 2 : 0); cy < N; cy += 5) {
+          for (let cx = 3; cx < N; cx += 6) {
+            px(cx - 2, cy, 5, 3, 0x4f8a40);
+            px(cx - 1, cy - 1, 3, 1, 0x69a84f);
+            px(cx, cy - 1, 1, 1, 0x8cc169);
+          }
+        }
+      });
+    }
+
+    // --- Hội An shophouse wall (nhà phố cổ) — ochre wall + shutter, blocked ---
+    make("tile-shophouse-0", () => {
+      base(0xd8a23c);
+      px(0, 0, N, 2, 0x9a5a2c); // tiled roof lip
+      px(0, 0, N, 1, 0xb5683a);
+      // moss / aged stains
+      for (let i = 0; i < 10; i++) {
+        const rand = rng(1313 + i);
+        px(Math.floor(rand() * N), 3 + Math.floor(rand() * (N - 4)), 1, 1, 0xb9852f, 0.6);
+      }
+      // wooden shutter window
+      px(5, 7, 10, 9, 0x6f4a28);
+      px(6, 8, 8, 7, 0x8a5a30);
+      px(10, 7, 1, 9, 0x5a3a20);
+      for (let yy = 8; yy < 15; yy += 2) px(6, yy, 8, 1, 0x5a3a20, 0.7);
+    });
+
+    // ----- DECOR (transparent bg, non-blocking, scattered by the renderer) -----
+    // small wildflower clump
+    make("decor-flower", () => {
+      px(8, 11, 4, 2, 0x4f7a37);
+      px(9, 6, 2, 2, 0xe85c8a); px(7, 8, 2, 2, 0xf0d765); px(11, 8, 2, 2, 0xef6f6f);
+      px(9, 9, 2, 1, 0xffffff, 0.8);
+    });
+    // grass tuft
+    make("decor-tuft", () => {
+      for (const gx of [6, 9, 12]) { px(gx, 8, 1, 6, 0x5d8642); px(gx, 7, 1, 1, 0x82ad5d); }
+      px(7, 13, 7, 1, 0x4f7a37);
+    });
+    // lily pad + lotus bud (for shallow pond)
+    make("decor-lily", () => {
+      px(6, 8, 8, 5, 0x3f8c4f); px(7, 9, 6, 3, 0x55a861); px(9, 7, 4, 1, 0x2f6e3a);
+      px(12, 6, 2, 3, 0xef9bc0); px(12, 5, 2, 1, 0xffd5e6);
+    });
+    // hanging lantern (đèn lồng Hội An)
+    make("decor-lantern", () => {
+      px(9, 0, 2, 2, 0x6f4a28); // string + cap
+      px(7, 2, 6, 8, 0xd14b3c); px(8, 3, 4, 6, 0xe87060);
+      px(7, 2, 6, 1, 0xf0c45a); px(7, 9, 6, 1, 0xf0c45a);
+      px(9, 10, 2, 3, 0xd9a23a); // tassel
+    });
+    // banana plant (cây chuối) — taller decor
+    make("decor-banana", () => {
+      px(9, 8, 2, 10, 0x6f8a3a); // trunk
+      for (const [lx, ly, lw, lh] of [[3, 4, 7, 2], [10, 3, 7, 2], [2, 8, 6, 2], [12, 8, 6, 2]] as const) {
+        px(lx, ly, lw, lh, 0x3f7a34); px(lx, ly, lw, 1, 0x57a046);
+      }
+      px(8, 2, 4, 4, 0x4f8c3a);
+    });
+
     g.destroy();
   }
 }
@@ -888,31 +1321,26 @@ function updateHud(snapshot: GameSnapshot) {
   const levelCount = document.querySelector<HTMLElement>("#level-count");
   const attackCount = document.querySelector<HTMLElement>("#attack-count");
   const xpCount = document.querySelector<HTMLElement>("#xp-count");
-  const lotusCount = document.querySelector<HTMLElement>("#lotus-count");
-  const dummyCount = document.querySelector<HTMLElement>("#dummy-count");
-  const bambooCount = document.querySelector<HTMLElement>("#bamboo-count");
-  const chapterLabel = document.querySelector<HTMLElement>("#chapter-label");
-  const chapterCount = document.querySelector<HTMLElement>("#chapter-count");
+  const collectLabel = document.querySelector<HTMLElement>("#obj-collect-label");
+  const collectCount = document.querySelector<HTMLElement>("#obj-collect-count");
+  const collectBar = document.querySelector<HTMLSpanElement>("#obj-collect-bar");
+  const trainLabel = document.querySelector<HTMLElement>("#obj-train-label");
+  const trainCount = document.querySelector<HTMLElement>("#obj-train-count");
+  const trainBar = document.querySelector<HTMLSpanElement>("#obj-train-bar");
   const skillName = document.querySelector<HTMLElement>("#staff-skill strong");
   const xpBar = document.querySelector<HTMLSpanElement>("#xp-bar");
-  const lotusBar = document.querySelector<HTMLSpanElement>("#lotus-bar");
-  const dummyBar = document.querySelector<HTMLSpanElement>("#dummy-bar");
-  const bambooBar = document.querySelector<HTMLSpanElement>("#bamboo-bar");
-  const chapterBar = document.querySelector<HTMLSpanElement>("#chapter-bar");
 
-  const titleByPhase: Record<GameSnapshot["phase"], string> = {
-    intro: "Nghe thầy Ba chỉ bài",
-    "village-training": "Bài nhập môn sân làng",
-    "bamboo-ready": "Mở đường sang bãi tre",
-    "bamboo-training": "Luyện thân pháp bãi tre",
-    "gate-open": "Quay về cổng đình",
-    "market-ready": "Mở đường sang chợ huyện",
-    "market-training": "Giữ việc chợ huyện",
-    "river-ready": "Xuống bến sông",
-    "river-training": "Bài giữ bước bến sông",
-    "mountain-ready": "Lên Núi Trúc",
-    "mountain-training": "Thử thách Núi Trúc",
-    "chapter-complete": "Võ sinh làng Tre",
+  const titleByMap: Record<MapId, string> = {
+    village: "Sân làng Tre",
+    bamboo: "Bãi tre",
+    market: "Chợ huyện",
+    river: "Bến sông",
+    terrace: "Ruộng Bậc Thang",
+    oldtown: "Phố Cổ Hội An",
+    mountain: "Núi Trúc",
+    chua: "Chùa Làng",
+    doiche: "Đồi Chè",
+    chonoi: "Chợ Nổi",
   };
   const terrainByState: Record<GameSnapshot["terrain"], string> = {
     normal: "Đất khô",
@@ -920,7 +1348,7 @@ function updateHud(snapshot: GameSnapshot) {
     "blocked-water": "Nước sâu",
   };
 
-  if (title) title.textContent = titleByPhase[snapshot.phase];
+  if (title) title.textContent = titleByMap[snapshot.map];
   if (map) map.textContent = MAPS[snapshot.map].name;
   if (terrain) terrain.textContent = terrainByState[snapshot.terrain];
   if (prompt) prompt.textContent = snapshot.prompt;
@@ -928,17 +1356,49 @@ function updateHud(snapshot: GameSnapshot) {
   if (levelCount) levelCount.textContent = `Cấp ${snapshot.level}`;
   if (attackCount) attackCount.textContent = `Gậy +${snapshot.attackPower}`;
   if (xpCount) xpCount.textContent = `${snapshot.xp}/${snapshot.xpToNext}`;
-  if (lotusCount) lotusCount.textContent = `${snapshot.lotuses}/${snapshot.requiredLotuses}`;
-  if (dummyCount) dummyCount.textContent = `${snapshot.dummies}/${snapshot.requiredDummies}`;
-  if (bambooCount) bambooCount.textContent = `${snapshot.bambooTokens}/${snapshot.requiredBambooTokens}`;
-  if (chapterLabel) chapterLabel.textContent = snapshot.chapterLabel;
-  if (chapterCount) chapterCount.textContent = `${snapshot.chapterItems}/${snapshot.requiredChapterItems}`;
   if (skillName) skillName.textContent = `Gậy tre cấp ${snapshot.level}`;
   if (xpBar) xpBar.style.width = `${(snapshot.xp / snapshot.xpToNext) * 100}%`;
-  if (lotusBar) lotusBar.style.width = `${(snapshot.lotuses / snapshot.requiredLotuses) * 100}%`;
-  if (dummyBar) dummyBar.style.width = `${(snapshot.dummies / snapshot.requiredDummies) * 100}%`;
-  if (bambooBar) bambooBar.style.width = `${(snapshot.bambooTokens / snapshot.requiredBambooTokens) * 100}%`;
-  if (chapterBar) chapterBar.style.width = `${(snapshot.chapterItems / snapshot.requiredChapterItems) * 100}%`;
+
+  // Two objectives, computed from the CURRENT map only (collectibles + training
+  // posts). This keeps the HUD honest: you only ever see goals you can do here.
+  const collectLabels: Record<CollectibleKind, string> = {
+    lotus: "Sen",
+    "bamboo-token": "Thẻ tre",
+    "market-scroll": "Sổ chợ",
+    "river-pearl": "Ngọc sông",
+    "mountain-seal": "Ấn trúc",
+    "rice-sheaf": "Bó lúa",
+    "lantern-orb": "Đèn lồng",
+    incense: "Nén hương",
+    "tea-bud": "Búp chè",
+    fruit: "Trái cây",
+  };
+  const trainLabels: Record<MapId, string> = {
+    village: "Bù nhìn",
+    bamboo: "Cọc tre",
+    market: "Cọc chợ",
+    river: "Cọc bến",
+    mountain: "Cọc đá",
+    terrace: "Cọc ruộng",
+    oldtown: "Cọc phố",
+    chua: "Cọc chùa",
+    doiche: "Cọc chè",
+    chonoi: "Cọc nổi",
+  };
+  const m = MAPS[snapshot.map];
+  const collectKind = m.collectibles[0]?.kind;
+  const collectTotal = m.collectibles.length;
+  const collectDone = m.collectibles.filter((c) => snapshot.collectedIds.includes(c.id)).length;
+  const trainTotal = m.targets.length;
+  const trainDone = m.targets.filter((t) => snapshot.defeatedIds.includes(t.id)).length;
+  const pct = (a: number, b: number) => (b > 0 ? (a / b) * 100 : 0);
+
+  if (collectLabel) collectLabel.textContent = collectKind ? collectLabels[collectKind] : "Lễ vật";
+  if (collectCount) collectCount.textContent = `${collectDone}/${collectTotal}`;
+  if (collectBar) collectBar.style.width = `${pct(collectDone, collectTotal)}%`;
+  if (trainLabel) trainLabel.textContent = trainLabels[snapshot.map];
+  if (trainCount) trainCount.textContent = `${trainDone}/${trainTotal}`;
+  if (trainBar) trainBar.style.width = `${pct(trainDone, trainTotal)}%`;
 }
 
 function collectText(kind: CollectibleKind) {
@@ -948,6 +1408,11 @@ function collectText(kind: CollectibleKind) {
     "market-scroll": "+ sổ chợ",
     "river-pearl": "+ ngọc sông",
     "mountain-seal": "+ ấn trúc",
+    "rice-sheaf": "+ bó lúa",
+    "lantern-orb": "+ đèn lồng",
+    incense: "+ nén hương",
+    "tea-bud": "+ búp chè",
+    fruit: "+ trái cây",
   };
   return labels[kind];
 }
@@ -1030,6 +1495,7 @@ new Phaser.Game({
   parent: "game-root",
   width: window.innerWidth,
   height: window.innerHeight,
+  pixelArt: true,
   physics: {
     default: "arcade",
     arcade: {

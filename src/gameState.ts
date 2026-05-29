@@ -12,7 +12,17 @@ export type QuestPhase =
   | "mountain-training"
   | "chapter-complete";
 
-export type MapId = "village" | "bamboo" | "market" | "river" | "mountain";
+export type MapId =
+  | "village"
+  | "bamboo"
+  | "market"
+  | "river"
+  | "mountain"
+  | "terrace"
+  | "oldtown"
+  | "chua"
+  | "doiche"
+  | "chonoi";
 export type TerrainStatus = "normal" | "shallow-water" | "blocked-water";
 
 export type SaveData = {
@@ -73,7 +83,17 @@ const DEFAULT_SAVE: SaveData = {
   canSwim: false,
 };
 
-type CollectibleKind = "lotus" | "bamboo-token" | "market-scroll" | "river-pearl" | "mountain-seal";
+type CollectibleKind =
+  | "lotus"
+  | "bamboo-token"
+  | "market-scroll"
+  | "river-pearl"
+  | "mountain-seal"
+  | "rice-sheaf"
+  | "lantern-orb"
+  | "incense"
+  | "tea-bud"
+  | "fruit";
 type SerializedSave = Partial<Omit<SaveData, "version" | "phase" | "map">> & {
   version?: number;
   phase?: string;
@@ -86,6 +106,11 @@ const COLLECT_XP: Record<CollectibleKind, number> = {
   "market-scroll": 20,
   "river-pearl": 24,
   "mountain-seal": 28,
+  "rice-sheaf": 22,
+  "lantern-orb": 26,
+  incense: 18,
+  "tea-bud": 24,
+  fruit: 22,
 };
 
 const TARGET_XP: Partial<Record<MapId, number>> = {
@@ -94,6 +119,11 @@ const TARGET_XP: Partial<Record<MapId, number>> = {
   market: 28,
   river: 32,
   mountain: 40,
+  terrace: 30,
+  oldtown: 34,
+  chua: 22,
+  doiche: 32,
+  chonoi: 30,
 };
 
 const RANKS = [
@@ -128,43 +158,35 @@ export class GameState {
   }
 
   collect(id: string, kind: CollectibleKind) {
-    if (this.data.collectedIds.includes(id) || this.data.phase === "chapter-complete") return false;
+    if (this.data.collectedIds.includes(id)) return false;
 
+    // Đồ chỉ xuất hiện trên đúng map của nó → nhặt được bất cứ lúc nào đang ở đó,
+    // không cần làm xong bài map trước (nhiệm vụ tách rời chuyện đi lại).
     if (kind === "lotus") {
-      if (this.data.phase === "intro") {
-        this.prompt = "Nghe thầy Ba giao bài trước rồi hãy hái sen.";
-        return false;
-      }
       this.data.lotuses = Math.min(REQUIRED_LOTUSES, this.data.lotuses + 1);
-      this.prompt = "Đã hái thêm một bông sen. Gom đủ lễ vật rồi tiếp tục luyện quyền.";
+      this.prompt = "Đã hái thêm một bông sen ven ao.";
     } else if (kind === "bamboo-token") {
-      if (this.data.phase !== "bamboo-training") {
-        this.prompt = "Thẻ tre thuộc bài bãi tre. Hãy hoàn thành bài sân làng trước.";
-        return false;
-      }
       this.data.bambooTokens = Math.min(REQUIRED_BAMBOO_TOKENS, this.data.bambooTokens + 1);
-      this.prompt = "Đã lấy thêm một thẻ tre. Tập trung giữ nhịp thở giữa bãi tre.";
+      this.prompt = "Đã lấy thêm một thẻ tre giữa bãi tre.";
     } else if (kind === "market-scroll") {
-      if (this.data.phase !== "market-training") {
-        this.prompt = "Sổ chợ chỉ tính khi thầy đã mở đường sang chợ huyện.";
-        return false;
-      }
       this.data.marketScrolls = Math.min(REQUIRED_MARKET_SCROLLS, this.data.marketScrolls + 1);
-      this.prompt = "Đã ghi thêm một việc làng ở chợ huyện. Giúp đủ việc rồi sang bến sông.";
+      this.prompt = "Đã ghi thêm một sổ việc làng ở chợ huyện.";
     } else if (kind === "river-pearl") {
-      if (this.data.phase !== "river-training") {
-        this.prompt = "Ngọc sông thuộc bài bến nước. Xong việc chợ rồi hãy qua đò.";
-        return false;
-      }
       this.data.riverPearls = Math.min(REQUIRED_RIVER_PEARLS, this.data.riverPearls + 1);
-      this.prompt = "Nhặt được ngọc trai ven bến. Luyện bước nhẹ để không trượt xuống nước.";
-    } else {
-      if (this.data.phase !== "mountain-training") {
-        this.prompt = "Ấn trúc nằm trên núi. Qua bến sông rồi mới lên đường núi.";
-        return false;
-      }
+      this.prompt = "Nhặt được một viên ngọc dưới mép sông.";
+    } else if (kind === "mountain-seal") {
       this.data.mountainSeals = Math.min(REQUIRED_MOUNTAIN_SEALS, this.data.mountainSeals + 1);
-      this.prompt = "Ấn trúc đã sáng. Còn thiếu thì luyện thêm cọc đá trên sân núi.";
+      this.prompt = "Một ấn trúc trên Núi Trúc đã sáng lên.";
+    } else if (kind === "rice-sheaf") {
+      this.prompt = "Bó một ôm lúa chín trên ruộng bậc thang.";
+    } else if (kind === "lantern-orb") {
+      this.prompt = "Thắp sáng một chiếc đèn lồng phố cổ.";
+    } else if (kind === "incense") {
+      this.prompt = "Thắp một nén hương trước sân chùa.";
+    } else if (kind === "tea-bud") {
+      this.prompt = "Hái một búp chè non trên đồi.";
+    } else {
+      this.prompt = "Mua một giỏ trái cây ở chợ nổi.";
     }
 
     this.data.collectedIds.push(id);
@@ -174,7 +196,7 @@ export class GameState {
   }
 
   defeatTarget(id: string, map: MapId) {
-    if (this.data.defeatedIds.includes(id) || this.data.phase === "chapter-complete") return false;
+    if (this.data.defeatedIds.includes(id)) return false;
     this.data.defeatedIds.push(id);
     this.gainXp(TARGET_XP[map] ?? 20);
     if (map === "village") {
@@ -422,6 +444,11 @@ export class GameState {
       market: "Chợ huyện đông người. Giữ đường đi, luyện cọc và thu sổ việc làng.",
       river: "Bến sông nước xoáy. Đi theo bờ đất, tránh nước sâu và cầu trơn.",
       mountain: "Núi Trúc lộng gió. Luyện cọc đá và gom đủ ấn trúc.",
+      terrace: "Ruộng bậc thang vàng óng. Đi theo bờ ruộng, gom bó lúa và luyện cọc.",
+      oldtown: "Phố cổ Hội An rực đèn lồng. Dạo phố lát gạch, thắp đèn và luyện cọc.",
+      chua: "Chùa làng trầm mặc bên hồ sen. Thắp nén hương và luyện cọc trước sân.",
+      doiche: "Đồi chè xanh mướt. Theo lối giữa luống, hái búp chè và luyện cọc.",
+      chonoi: "Chợ nổi tấp nập trên kênh. Đi theo cầu gỗ, gom trái cây và luyện cọc.",
     };
     return prompts[map];
   }
@@ -446,9 +473,8 @@ export class GameState {
   }
 
   private validateMap(map: unknown): MapId {
-    return map === "village" || map === "bamboo" || map === "market" || map === "river" || map === "mountain"
-      ? map
-      : "village";
+    const maps: MapId[] = ["village", "bamboo", "market", "river", "mountain", "terrace", "oldtown", "chua", "doiche", "chonoi"];
+    return maps.includes(map as MapId) ? (map as MapId) : "village";
   }
 
   private validatePhase(phase: unknown): QuestPhase {
